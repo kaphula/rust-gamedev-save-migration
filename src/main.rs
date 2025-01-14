@@ -1,5 +1,9 @@
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
+use std::path::Path;
 
 /// All versions of the game represented as data that can be serialized and deserialized.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -37,7 +41,7 @@ impl GameState {
       cc
    }
 
-   fn load_from_json(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
+   fn init_from_json(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
       let parsed: Value = serde_json::from_str(json)?;
 
       // load the matching version state:
@@ -368,7 +372,9 @@ fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
       // (this tests that the entity relations have stayed consistent across
       // different save game conversions)
       if let Some(target_e) = a.target {
-         let mut x = world.get::<(&mut Health)>(target_e).expect("target should be valid");
+         let mut x = world
+            .get::<(&mut Health)>(target_e)
+            .expect("target should be valid");
          x.health = x.health.saturating_sub(a.damage);
       }
    }
@@ -384,19 +390,38 @@ fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
    }
 }
 
+fn save_to_disk<T: Serialize>(path: &Path, data: T) -> Result<(), std::io::Error> {
+   let json = serde_json::to_string(&data)?;
+   let mut file = File::create(&path)?;
+   file.write(&json.as_bytes())?;
+   println!("Saved \'{}\' to disk.", path.display());
+   Ok(())
+}
+
+fn load_from_disk_as_json_string(path: &Path) -> Result<String, std::io::Error> {
+   let mut open = File::open(path)?;
+   let mut json = String::new();
+   open.read_to_string(&mut json);
+   Ok(json)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-   // Simulate loading a save file that a user has saved when the game was in version 1 state.
-   let v1_game_state = GameState::V1_0(V1SaveState::generate_save_file());
-   let json_v1 = v1_game_state.save_to_json()?;
+   // load save file from disk. If save file does not exist we generate it.
+   let save_file_path = Path::new("version1_save");
+   if !save_file_path.exists() {
+      let v1_game_state = GameState::V1_0(V1SaveState::generate_save_file());
+      save_to_disk(save_file_path, &v1_game_state)?;
+   }
+   let json = load_from_disk_as_json_string(&save_file_path)?;
 
-   // load the save file and convert it to latest version:
-   let mut loaded_state = GameState::load_from_json(&json_v1)?;
+   // convert the loaded save file to latest format:
+   let mut loaded_state = GameState::init_from_json(&json)?;
 
+   // load the save file and start the game:
    match loaded_state {
       GameState::V1_0(_) => {}
       GameState::V2_0(_) => {}
       GameState::V3_0(x) => run_latest_version_of_game_from_save_state(x),
    }
-
    Ok(())
 }
