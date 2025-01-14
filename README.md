@@ -17,15 +17,16 @@ consent.
 Now, when they try to continue their game progress using a save file from previous version, your game needs to know how
 to
 migrate the
-previous save file to the current version of the game. Because who likes to be told that a silent update just dropped
+previous save file to the current version of the game. 
+
+Nobody likes to be told that a silent update just dropped
 and
-now your previous progress is lost because attempting to use its save file will crash the game or simply does not work
-otherwise, and the only option is to start a
+now your previous progress is lost because attempting to use a previous save file will crash the game or simply does not work
+otherwise, and therefore the only option to keep playing the game is to start a
 new game (until next silent update drops).
 
 How do you prepare and manage the complexity of converting old save files to be compatible with your game's latest
 version?
-
 
 ## Run
 
