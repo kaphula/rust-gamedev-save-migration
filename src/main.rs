@@ -82,6 +82,7 @@ struct V1SavePlayer {
    entity: hecs::Entity,
    health: u32,
    level: u32,
+   target: Option<hecs::Entity>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -123,6 +124,7 @@ impl V1SaveState {
             entity: e,
             health: b.health,
             level: a.level,
+            target: Some(monster),
          })
       }
 
@@ -148,8 +150,9 @@ impl V1SaveState {
             entity: x.entity,
             health: x.health,
             level: x.level,
+            target: x.target,
             exp: 0,
-            damage: 0,
+            damage: 5, // we add ability for the player to attack in this version
          })
          .collect::<Vec<_>>();
 
@@ -159,7 +162,7 @@ impl V1SaveState {
          .map(|x| V2SaveMonster {
             entity: x.entity,
             health: x.health,
-            damage: 5,
+            damage: 2,
          })
          .collect::<Vec<_>>();
 
@@ -181,6 +184,7 @@ struct V2SavePlayer {
    entity: hecs::Entity,
    health: u32,
    level: u32,
+   target: Option<hecs::Entity>,
 
    // v2
    exp: u32,
@@ -205,6 +209,7 @@ impl V2SaveState {
             entity: x.entity,
             health: x.health,
             level: x.level,
+            target: x.target,
             damage: x.damage,
          })
          .collect::<Vec<_>>();
@@ -251,6 +256,7 @@ struct V3SavePlayer {
    entity: hecs::Entity,
    health: u32,
    level: u32,
+   target: Option<hecs::Entity>,
 
    // v2
    // exp: u32, // v3 remove
@@ -307,6 +313,7 @@ fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
    struct Player {
       level: u32,
       damage: u32,
+      target: Option<hecs::Entity>,
    }
 
    struct Health {
@@ -325,6 +332,7 @@ fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
          Player {
             level: x.level,
             damage: x.damage,
+            target: x.target,
          },
          Health { health: x.health },
       );
@@ -354,6 +362,15 @@ fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
          a.damage,
          a.level
       );
+
+      // player attacks target with health component (monster):
+      //
+      // (this tests that the entity relations have stayed consistent across
+      // different save game conversions)
+      if let Some(target_e) = a.target {
+         let mut x = world.get::<(&mut Health)>(target_e).expect("target should be valid");
+         x.health = x.health.saturating_sub(a.damage);
+      }
    }
 
    for (e, (a, b)) in &mut world.query::<(&Monster, &Health)>() {
