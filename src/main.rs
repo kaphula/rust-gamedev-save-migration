@@ -11,8 +11,12 @@ enum GameState {
     #[serde(rename = "3.0")]
     V3_0(V3SaveState),
 }
+type LatestSaveStateVersion = V3SaveState;
 
 impl GameState {
+    const DATA_FIELD_NAME: &'static str = "data";
+    const VERSION_FIELD_NAME: &'static str = "version";
+
     fn upgrade_version(self) -> GameState {
         let v = match self {
             GameState::V1_0(x) => GameState::V2_0(x.upgrade()),
@@ -32,17 +36,17 @@ impl GameState {
 
     fn load_from_json(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let parsed: Value = serde_json::from_str(json)?;
-        let deserialized_version = match parsed["version"].as_str() {
+        let deserialized_version = match parsed[Self::VERSION_FIELD_NAME].as_str() {
             Some("1.0") => {
-                let v: V1SaveState = serde_json::from_value(parsed["data"].clone())?;
+                let v: V1SaveState = serde_json::from_value(parsed[Self::DATA_FIELD_NAME].clone())?;
                 GameState::V1_0(v)
             }
             Some("2.0") => {
-                let v: V2SaveState = serde_json::from_value(parsed["data"].clone())?;
+                let v: V2SaveState = serde_json::from_value(parsed[Self::DATA_FIELD_NAME].clone())?;
                 GameState::V2_0(v)
             }
             Some("3.0") => {
-                let v: V3SaveState = serde_json::from_value(parsed["data"].clone())?;
+                let v: V3SaveState = serde_json::from_value(parsed[Self::DATA_FIELD_NAME].clone())?;
                 GameState::V3_0(v)
             }
             _ => return Err("Unknown version".into()),
@@ -105,8 +109,8 @@ impl V1SaveState {
         for (e, (a, b)) in &mut world.query::<(&Player, &Health)>() {
             players.push(V1SavePlayer {
                 entity: e,
-                health: a.level,
-                level: b.health,
+                health: b.health,
+                level: a.level,
             })
         }
 
@@ -198,7 +202,7 @@ impl V2SaveState {
                 entity: x.entity,
                 health: x.health,
                 damage: x.damage,
-                variant: MonsterVariant::Angry,
+                variant: V3MonsterVariant::Angry,
             })
             .collect::<Vec<_>>();
 
@@ -231,7 +235,7 @@ struct V3SavePlayer {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-enum MonsterVariant {
+enum V3MonsterVariant {
     Angry,
     Scary,
 }
@@ -245,7 +249,7 @@ struct V3SaveMonster {
     damage: u32,
 
     // v3
-    variant: MonsterVariant,
+    variant: V3MonsterVariant,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -256,10 +260,95 @@ struct V3SaveState {
 
 // ------------------------------------------------------
 
+fn run_latest_version_of_game_from_save_state(state: LatestSaveStateVersion) {
+    #[derive(Debug, strum_macros::Display)]
+    enum MonsterVariant {
+        Angry,
+        Scary,
+    }
+
+    impl From<V3MonsterVariant> for MonsterVariant {
+        fn from(value: V3MonsterVariant) -> Self {
+            match value {
+                V3MonsterVariant::Angry => Self::Angry,
+                V3MonsterVariant::Scary => Self::Scary,
+            }
+        }
+    }
+
+    struct Player {
+        level: u32,
+        damage: u32,
+    }
+
+    struct Health {
+        health: u32,
+    }
+
+    struct Monster {
+        damage: u32,
+        variant: MonsterVariant,
+    }
+
+    let mut world = hecs::World::new();
+
+    for x in state.players {
+        let bundle = (
+            Player {
+                level: x.level,
+                damage: x.damage,
+            },
+            Health { health: x.health },
+        );
+        world.spawn_at(x.entity, bundle);
+    }
+
+    for x in state.monsters {
+        let bundle = (
+            Monster {
+                damage: x.damage,
+                variant: x.variant.into(),
+            },
+            Health { health: x.health },
+        );
+        world.spawn_at(x.entity, bundle);
+    }
+
+    // run game:
+
+    println!("Running game simulation from loaded save:");
+
+    for (e, (a, b)) in &mut world.query::<(&Player, &Health)>() {
+        println!(
+            "Player entity {}: (Health: {}) (Damage: {}) (Level: {})",
+            e.id(),
+            b.health,
+            a.damage,
+            a.level
+        );
+    }
+
+    for (e, (a, b)) in &mut world.query::<(&Monster, &Health)>() {
+        println!(
+            "Monster entity {}: (Health: {}) (Damage: {}) (Variant: {})",
+            e.id(),
+            b.health,
+            a.damage,
+            a.variant
+        );
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let v1_game_state = GameState::V1_0(V1SaveState::generate_save_file());
     let json_v1 = v1_game_state.save_to_json()?;
     let mut loaded_state = GameState::load_from_json(&json_v1)?;
-    println!("Loaded and converted game state: {:?}", loaded_state);
+
+    match loaded_state {
+        GameState::V1_0(_) => {}
+        GameState::V2_0(_) => {}
+        GameState::V3_0(x) => run_latest_version_of_game_from_save_state(x),
+    }
+
     Ok(())
 }
